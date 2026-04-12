@@ -36,7 +36,7 @@ class DFSAgent:
         self.depth_limit = depth_limit
         self.nodes_expanded: int = 0
 
-    def solve(self, initial: Puzzle) -> Optional[Puzzle]:
+    def solve(self, initial: Puzzle, max_nodes: Optional[int] = None) -> Optional[Puzzle]:
         """
         Search for the goal state starting from *initial* using iterative
         deepening DFS (IDDFS) to combine the space efficiency of DFS with
@@ -56,20 +56,24 @@ class DFSAgent:
         self.nodes_expanded = 0
 
         for limit in range(self.depth_limit + 1):
+            if max_nodes is not None and self.nodes_expanded >= max_nodes:
+                return None
             visited: Set[tuple] = set()
-            result = self._dfs(initial, limit, visited)
+            result = self._dfs(initial, limit, visited, max_nodes=max_nodes)
             if result is not None:
                 return result
 
         return None  # No solution found within depth limit
 
     def _dfs(self, node: Puzzle, remaining_depth: int,
-             visited: Set[tuple]) -> Optional[Puzzle]:
+             visited: Set[tuple], max_nodes: Optional[int] = None) -> Optional[Puzzle]:
         """Recursive DFS with cycle detection and depth limiting."""
         self.nodes_expanded += 1
 
         if node.is_goal():
             return node
+        if max_nodes is not None and self.nodes_expanded >= max_nodes:
+            return None
 
         if remaining_depth == 0:
             return None
@@ -78,7 +82,12 @@ class DFSAgent:
 
         for move, successor in node.successors():
             if successor.state not in visited:
-                result = self._dfs(successor, remaining_depth - 1, visited)
+                result = self._dfs(
+                    successor,
+                    remaining_depth - 1,
+                    visited,
+                    max_nodes=max_nodes
+                )
                 if result is not None:
                     return result
 

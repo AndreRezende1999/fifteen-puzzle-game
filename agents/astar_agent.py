@@ -57,7 +57,7 @@ class AStarAgent:
     def __init__(self):
         self.nodes_expanded: int = 0
 
-    def solve(self, initial: Puzzle) -> Optional[Puzzle]:
+    def solve(self, initial: Puzzle, max_nodes: Optional[int] = None) -> Optional[Puzzle]:
         """
         Search for the goal state starting from *initial*.
 
@@ -86,14 +86,15 @@ class AStarAgent:
         while frontier:
             f, _, node = heapq.heappop(frontier)
 
+            # Skip if we've already found a cheaper path to this state
+            if node.cost > best_g.get(node.state, float("inf")):
+                continue
             self.nodes_expanded += 1
 
             if node.is_goal():
                 return node
-
-            # Skip if we've already found a cheaper path to this state
-            if node.cost > best_g.get(node.state, float("inf")):
-                continue
+            if max_nodes is not None and self.nodes_expanded >= max_nodes:
+                return None
 
             for move, successor in node.successors():
                 g = successor.cost  # g(n) = parent.cost + 1

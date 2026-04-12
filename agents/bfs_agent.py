@@ -24,7 +24,7 @@ class BFSAgent:
     def __init__(self):
         self.nodes_expanded: int = 0
 
-    def solve(self, initial: Puzzle) -> Optional[Puzzle]:
+    def solve(self, initial: Puzzle, max_nodes: Optional[int] = None) -> Optional[Puzzle]:
         """
         Search for the goal state starting from *initial*.
 
@@ -54,6 +54,10 @@ class BFSAgent:
         while frontier:
             node = frontier.popleft()
             self.nodes_expanded += 1
+            if node.is_goal():
+                return node
+            if max_nodes is not None and self.nodes_expanded >= max_nodes:
+                return None
 
             for move, successor in node.successors():
                 if successor.state not in visited:

@@ -15,6 +15,7 @@ import unittest
 from puzzle import Puzzle, GOAL_STATE, BOARD_SIZE
 from agents import BFSAgent, DFSAgent, AStarAgent
 from agents.astar_agent import manhattan_distance
+from main import benchmark_agents
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +228,13 @@ class TestBFSAgent(unittest.TestCase):
         agent.solve(initial)
         self.assertGreater(agent.nodes_expanded, 0)
 
+    def test_respects_max_nodes_bound(self):
+        initial = Puzzle.generate_random_from_goal(moves=20)
+        agent = BFSAgent()
+        result = agent.solve(initial, max_nodes=1)
+        self.assertIsNone(result)
+        self.assertLessEqual(agent.nodes_expanded, 1)
+
 
 class TestDFSAgent(unittest.TestCase):
 
@@ -249,6 +257,13 @@ class TestDFSAgent(unittest.TestCase):
         agent = DFSAgent()
         agent.solve(initial)
         self.assertGreater(agent.nodes_expanded, 0)
+
+    def test_respects_max_nodes_bound(self):
+        initial = Puzzle.generate_random_from_goal(moves=20)
+        agent = DFSAgent(depth_limit=50)
+        result = agent.solve(initial, max_nodes=1)
+        self.assertIsNone(result)
+        self.assertLessEqual(agent.nodes_expanded, 1)
 
 
 class TestAStarAgent(unittest.TestCase):
@@ -287,6 +302,25 @@ class TestAStarAgent(unittest.TestCase):
         agent = AStarAgent()
         agent.solve(initial)
         self.assertGreater(agent.nodes_expanded, 0)
+
+    def test_respects_max_nodes_bound(self):
+        initial = Puzzle.generate_random_from_goal(moves=20)
+        agent = AStarAgent()
+        result = agent.solve(initial, max_nodes=1)
+        self.assertIsNone(result)
+        self.assertLessEqual(agent.nodes_expanded, 1)
+
+
+class TestBenchmark(unittest.TestCase):
+
+    def test_benchmark_returns_expected_keys(self):
+        summary = benchmark_agents(trials=2, moves=5, max_nodes=5000, dfs_limit=20)
+        self.assertEqual(set(summary.keys()), {"BFS", "DFS", "A*"})
+        for method in ("BFS", "DFS", "A*"):
+            self.assertIn("solved", summary[method])
+            self.assertIn("avg_nodes_expanded", summary[method])
+            self.assertIn("avg_moves_to_solution", summary[method])
+            self.assertIn("avg_time_seconds", summary[method])
 
 
 if __name__ == "__main__":
