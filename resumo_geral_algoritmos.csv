@@ -1,0 +1,4 @@
+metodo,total_execucoes,resolvidos,media_nos,media_tempo_s,media_movimentos,taxa_sucesso_%
+A*,100,2,393168.9,3.9045319409299872,43.5,2.0
+BFS,100,0,400000.0,1.1797882622399767,,0.0
+DFS,100,0,400000.0,0.5981226752100293,,0.0

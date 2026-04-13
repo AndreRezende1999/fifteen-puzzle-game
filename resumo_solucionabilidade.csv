@@ -1,0 +1,7 @@
+estado_solucionavel,metodo,taxa_sucesso,media_nos,media_tempo,taxa_sucesso_%,tipo_estado
+False,A*,0.0,400000.0,3.9880958099804014,0.0,Insoluvel
+False,BFS,0.0,400000.0,1.1803000877647023,0.0,Insoluvel
+False,DFS,0.0,400000.0,0.5990412493529755,0.0,Insoluvel
+True,A*,0.04081632653061224,386058.97959183675,3.8175573017142503,4.081632653061225,Solucionavel
+True,BFS,0.0,400000.0,1.179255545877507,0.0,Solucionavel
+True,DFS,0.0,400000.0,0.5971666082449218,0.0,Solucionavel

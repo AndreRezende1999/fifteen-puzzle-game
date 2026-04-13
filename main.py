@@ -3,7 +3,6 @@ TP1 - Fundamentos de IA
 Jogo do 15 em arquivo unico, simples e comentado.
 """
 
-import argparse
 import heapq
 import random
 import time
@@ -13,13 +12,20 @@ from typing import Dict, List, Optional, Tuple
 BOARD_SIZE = 4
 GOAL_STATE: Tuple[int, ...] = tuple(range(1, 16)) + (0,)
 
-# Limites fixos (o enunciado recomenda encerrar apos um limite alto de movimentos/nos).
-MAX_NODES = 200000
-DFS_MAX_DEPTH = 50
+# NODE_LIMIT:
+#   Limita quantos nos cada algoritmo pode expandir antes de parar.
+#   Quanto maior, mais chance de encontrar solucao, mas maior o tempo.
+NODE_LIMIT = 200000
 
-# Valores padrao para experimentos.
-DEFAULT_SCRAMBLE_MOVES = 20
-DEFAULT_TRIALS = 10
+# DEPTH_LIMIT:
+#   Profundidade maxima da DFS.
+#   Quanto maior, maior cobertura da busca, mas com custo maior.
+DEPTH_LIMIT = 50
+
+# NUM_EXPERIMENTS:
+#   Quantidade de jogos usados na comparacao estatistica.
+#   Quanto maior, medias mais estaveis (e mais tempo de execucao).
+NUM_EXPERIMENTS = 10
 
 State = Tuple[int, ...]
 
@@ -78,24 +84,14 @@ def is_solvable(state: State) -> bool:
 
 # ------------------------------ Tarefa 2 ------------------------------
 
-def generate_initial_state(scramble_moves: int) -> State:
+def generate_initial_state(_unused_steps: Optional[int] = None) -> State:
     """
-    Gera estado aleatorio aplicando movimentos validos a partir do objetivo.
-    Assim, o estado inicial sempre sera solucionavel.
+    Gera um vetor aleatorio com os valores de 0 a 15 (0 = vazio).
+    O parametro e ignorado e mantido apenas por compatibilidade.
     """
-    state = GOAL_STATE
-    opposite = {"UP": "DOWN", "DOWN": "UP", "LEFT": "RIGHT", "RIGHT": "LEFT"}
-    last_move: Optional[str] = None
-
-    for _ in range(scramble_moves):
-        options = successors(state)
-        if last_move is not None:
-            filtered = [(m, s) for m, s in options if m != opposite[last_move]]
-            if filtered:
-                options = filtered
-        move, state = random.choice(options)
-        last_move = move
-    return state
+    values = list(range(16))
+    random.shuffle(values)
+    return tuple(values)
 
 
 def reconstruct_moves(
@@ -107,8 +103,9 @@ def reconstruct_moves(
     current = goal
     while parent[current][0] is not None:
         prev, move = parent[current]
+        assert prev is not None
         moves.append(move or "")
-        current = prev  # type: ignore[assignment]
+        current = prev
     moves.reverse()
     return moves
 
@@ -137,7 +134,7 @@ def solve_bfs(initial: State) -> Dict[str, object]:
 
         if current == GOAL_STATE:
             return result_dict(True, reconstruct_moves(parent, current), expanded, start)
-        if expanded >= MAX_NODES:
+        if expanded >= NODE_LIMIT:
             break
 
         for move, nxt in successors(current):
@@ -167,9 +164,9 @@ def solve_dfs(initial: State) -> Dict[str, object]:
 
         if current == GOAL_STATE:
             return result_dict(True, reconstruct_moves(parent, current), expanded, start)
-        if expanded >= MAX_NODES:
+        if expanded >= NODE_LIMIT:
             break
-        if depth >= DFS_MAX_DEPTH:
+        if depth >= DEPTH_LIMIT:
             continue
 
         for move, nxt in reversed(successors(current)):
@@ -217,7 +214,7 @@ def solve_astar(initial: State) -> Dict[str, object]:
 
         if current == GOAL_STATE:
             return result_dict(True, reconstruct_moves(parent, current), expanded, start)
-        if expanded >= MAX_NODES:
+        if expanded >= NODE_LIMIT:
             break
 
         for move, nxt in successors(current):
@@ -242,7 +239,7 @@ def run_all_methods(initial: State) -> Dict[str, Dict[str, object]]:
     }
 
 
-def compare_methods(trials: int, scramble_moves: int) -> Dict[str, Dict[str, float]]:
+def compare_methods(trials: int) -> Dict[str, Dict[str, float]]:
     totals = {
         "BFS": {"solved": 0, "nodes": 0.0, "moves": 0.0, "time": 0.0},
         "DFS": {"solved": 0, "nodes": 0.0, "moves": 0.0, "time": 0.0},
@@ -250,7 +247,7 @@ def compare_methods(trials: int, scramble_moves: int) -> Dict[str, Dict[str, flo
     }
 
     for _ in range(trials):
-        initial = generate_initial_state(scramble_moves)
+        initial = generate_initial_state()
         results = run_all_methods(initial)
         for method in ("BFS", "DFS", "A*"):
             result = results[method]
@@ -258,7 +255,7 @@ def compare_methods(trials: int, scramble_moves: int) -> Dict[str, Dict[str, flo
             totals[method]["time"] += float(result["time"])
             if bool(result["solved"]):
                 totals[method]["solved"] += 1
-                totals[method]["moves"] += float(len(result["moves"]))  # type: ignore[arg-type]
+                totals[method]["moves"] += float(len(result["moves"]))
 
     summary: Dict[str, Dict[str, float]] = {}
     for method in ("BFS", "DFS", "A*"):
@@ -282,12 +279,12 @@ def print_single_execution(initial: State, results: Dict[str, Dict[str, object]]
     print("Estado inicial:")
     print_board(initial)
     print(f"\nSolucionavel? {is_solvable(initial)}")
-    print(f"Limites: MAX_NODES={MAX_NODES}, DFS_MAX_DEPTH={DFS_MAX_DEPTH}\n")
+    print()
 
     for method in ("BFS", "DFS", "A*"):
         result = results[method]
         solved = bool(result["solved"])
-        moves = result["moves"]  # type: ignore[assignment]
+        moves = result["moves"]
         print(f"{method}:")
         print(f"  Resolvido: {'sim' if solved else 'nao'}")
         print(f"  Nos expandidos: {result['nodes']}")
@@ -298,14 +295,11 @@ def print_single_execution(initial: State, results: Dict[str, Dict[str, object]]
         print()
 
 
-def print_comparison(summary: Dict[str, Dict[str, float]], trials: int, scramble_moves: int) -> None:
+def print_comparison(summary: Dict[str, Dict[str, float]], trials: int) -> None:
     print("=" * 60)
     print("JOGO DO 15 - COMPARACAO")
     print("=" * 60)
-    print(
-        f"trials={trials} | scramble_moves={scramble_moves} | "
-        f"MAX_NODES={MAX_NODES} | DFS_MAX_DEPTH={DFS_MAX_DEPTH}\n"
-    )
+    print()
 
     for method in ("BFS", "DFS", "A*"):
         data = summary[method]
@@ -319,24 +313,12 @@ def print_comparison(summary: Dict[str, Dict[str, float]], trials: int, scramble
         print()
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="TP1 - Jogo do 15 (arquivo unico)")
-    parser.add_argument("--compare", action="store_true", help="Ativa comparacao dos metodos.")
-    parser.add_argument("--trials", type=int, default=DEFAULT_TRIALS, help="Numero de experimentos no modo compare.")
-    parser.add_argument("--moves", type=int, default=DEFAULT_SCRAMBLE_MOVES, help="Movimentos aleatorios para gerar estado inicial.")
-    return parser.parse_args()
-
-
 def main() -> None:
-    args = parse_args()
-    if args.compare:
-        summary = compare_methods(trials=args.trials, scramble_moves=args.moves)
-        print_comparison(summary, trials=args.trials, scramble_moves=args.moves)
-        return
-
-    initial = generate_initial_state(scramble_moves=args.moves)
+    initial = generate_initial_state()
     results = run_all_methods(initial)
     print_single_execution(initial, results)
+    summary = compare_methods(trials=NUM_EXPERIMENTS)
+    print_comparison(summary, trials=NUM_EXPERIMENTS)
 
 
 if __name__ == "__main__":
