@@ -1,191 +1,342 @@
 """
-Fifteen Puzzle Game - Main entry point.
-
-Demonstrates the 15-puzzle with three solving agents:
-  1. BFS  - Breadth-First Search  (optimal, slow for hard puzzles)
-  2. DFS  - Depth-First Search    (non-optimal, may find solution quickly)
-  3. A*   - A* with Manhattan Distance (optimal, most efficient)
-
-Usage:
-    python main.py [--moves N]
-
-Options:
-    --moves N   Number of random moves from goal to generate the puzzle
-                (default: 20).  Higher values produce harder puzzles.
+TP1 - Fundamentos de IA
+Jogo do 15 em arquivo unico, simples e comentado.
 """
 
 import argparse
+import heapq
+import random
 import time
-from typing import Dict
+from collections import deque
+from typing import Dict, List, Optional, Tuple
 
-from puzzle import Puzzle
-from agents import BFSAgent, DFSAgent, AStarAgent
+BOARD_SIZE = 4
+GOAL_STATE: Tuple[int, ...] = tuple(range(1, 16)) + (0,)
 
+# Limites fixos (o enunciado recomenda encerrar apos um limite alto de movimentos/nos).
+MAX_NODES = 200000
+DFS_MAX_DEPTH = 50
 
-def print_separator(char: str = "-", width: int = 48) -> None:
-    print(char * width)
+# Valores padrao para experimentos.
+DEFAULT_SCRAMBLE_MOVES = 20
+DEFAULT_TRIALS = 10
 
-
-def print_board(puzzle: Puzzle, title: str = "") -> None:
-    if title:
-        print(f"\n{title}")
-    print(puzzle)
-    print()
-
-
-def print_solution(goal_node: Puzzle) -> None:
-    path = goal_node.solution_path()
-    moves = goal_node.solution_moves()
-    print(f"  Moves ({len(moves)}): {' -> '.join(moves) if moves else 'Already solved'}")
-    print(f"  Path length: {len(path) - 1} step(s)")
+State = Tuple[int, ...]
 
 
-def run_agent(name: str, agent, initial: Puzzle, max_nodes: int | None = None) -> None:
-    print_separator()
-    print(f"Agent: {name}")
-    print_separator()
+def print_board(state: State) -> None:
+    """Mostra o tabuleiro no formato 4x4."""
+    for i in range(0, 16, 4):
+        row = []
+        for value in state[i:i + 4]:
+            row.append(f"{value:2d}" if value != 0 else " _")
+        print(" ".join(row))
 
-    start = time.time()
-    solution = agent.solve(initial, max_nodes=max_nodes)
-    elapsed = time.time() - start
 
-    if solution:
-        print_solution(solution)
-    else:
-        print("  No solution found within search limits.")
+def successors(state: State) -> List[Tuple[str, State]]:
+    """Retorna os estados vizinhos validos."""
+    idx = state.index(0)
+    row, col = divmod(idx, BOARD_SIZE)
+    result: List[Tuple[str, State]] = []
 
-    print(f"  Nodes expanded : {agent.nodes_expanded}")
-    print(f"  Time elapsed   : {elapsed:.4f}s")
+    def swap(i: int, j: int) -> State:
+        values = list(state)
+        values[i], values[j] = values[j], values[i]
+        return tuple(values)
 
-def benchmark_agents(trials: int, moves: int, max_nodes: int, dfs_limit: int) -> Dict[str, dict]:
+    if row > 0:
+        result.append(("UP", swap(idx, idx - BOARD_SIZE)))
+    if row < BOARD_SIZE - 1:
+        result.append(("DOWN", swap(idx, idx + BOARD_SIZE)))
+    if col > 0:
+        result.append(("LEFT", swap(idx, idx - 1)))
+    if col < BOARD_SIZE - 1:
+        result.append(("RIGHT", swap(idx, idx + 1)))
+    return result
+
+
+# ------------------------------ Tarefa 1 ------------------------------
+
+def count_inversions(state: State) -> int:
+    """Conta inversoes ignorando o 0."""
+    tiles = [x for x in state if x != 0]
+    total = 0
+    for i in range(len(tiles)):
+        for j in range(i + 1, len(tiles)):
+            if tiles[i] > tiles[j]:
+                total += 1
+    return total
+
+
+def is_solvable(state: State) -> bool:
+    """Verifica se o estado do 15-puzzle e solucionavel."""
+    inversions = count_inversions(state)
+    blank_row_from_bottom = BOARD_SIZE - (state.index(0) // BOARD_SIZE)
+    # Regra para grade 4x4.
+    return (inversions + blank_row_from_bottom) % 2 == 1
+
+
+# ------------------------------ Tarefa 2 ------------------------------
+
+def generate_initial_state(scramble_moves: int) -> State:
     """
-    Compare BFS, DFS and A* over multiple random, solvable initial states.
-
-    Returns aggregated metrics per method:
-      - solved
-      - avg_nodes_expanded
-      - avg_moves_to_solution (solved runs only)
-      - avg_time_seconds
+    Gera estado aleatorio aplicando movimentos validos a partir do objetivo.
+    Assim, o estado inicial sempre sera solucionavel.
     """
-    aggregates = {
-        "BFS": {"solved": 0, "nodes": 0, "moves": 0, "time": 0.0},
-        "DFS": {"solved": 0, "nodes": 0, "moves": 0, "time": 0.0},
-        "A*": {"solved": 0, "nodes": 0, "moves": 0, "time": 0.0},
+    state = GOAL_STATE
+    opposite = {"UP": "DOWN", "DOWN": "UP", "LEFT": "RIGHT", "RIGHT": "LEFT"}
+    last_move: Optional[str] = None
+
+    for _ in range(scramble_moves):
+        options = successors(state)
+        if last_move is not None:
+            filtered = [(m, s) for m, s in options if m != opposite[last_move]]
+            if filtered:
+                options = filtered
+        move, state = random.choice(options)
+        last_move = move
+    return state
+
+
+def reconstruct_moves(
+    parent: Dict[State, Tuple[Optional[State], Optional[str]]],
+    goal: State,
+) -> List[str]:
+    """Reconstrucao do caminho do estado inicial ate o objetivo."""
+    moves: List[str] = []
+    current = goal
+    while parent[current][0] is not None:
+        prev, move = parent[current]
+        moves.append(move or "")
+        current = prev  # type: ignore[assignment]
+    moves.reverse()
+    return moves
+
+
+def result_dict(solved: bool, moves: List[str], expanded: int, started_at: float) -> Dict[str, object]:
+    return {
+        "solved": solved,
+        "moves": moves,
+        "nodes": expanded,
+        "time": time.perf_counter() - started_at,
+    }
+
+
+# ------------------------------ Tarefa 3: BFS ------------------------------
+
+def solve_bfs(initial: State) -> Dict[str, object]:
+    start = time.perf_counter()
+    expanded = 0
+    queue = deque([initial])
+    visited = {initial}
+    parent: Dict[State, Tuple[Optional[State], Optional[str]]] = {initial: (None, None)}
+
+    while queue:
+        current = queue.popleft()
+        expanded += 1
+
+        if current == GOAL_STATE:
+            return result_dict(True, reconstruct_moves(parent, current), expanded, start)
+        if expanded >= MAX_NODES:
+            break
+
+        for move, nxt in successors(current):
+            if nxt in visited:
+                continue
+            visited.add(nxt)
+            parent[nxt] = (current, move)
+            queue.append(nxt)
+
+    return result_dict(False, [], expanded, start)
+
+
+# ------------------------------ Tarefa 3: DFS ------------------------------
+
+def solve_dfs(initial: State) -> Dict[str, object]:
+    start = time.perf_counter()
+    expanded = 0
+    stack: List[Tuple[State, int]] = [(initial, 0)]
+
+    # Guarda menor profundidade onde cada estado foi visto (evita ciclos).
+    best_depth: Dict[State, int] = {initial: 0}
+    parent: Dict[State, Tuple[Optional[State], Optional[str]]] = {initial: (None, None)}
+
+    while stack:
+        current, depth = stack.pop()
+        expanded += 1
+
+        if current == GOAL_STATE:
+            return result_dict(True, reconstruct_moves(parent, current), expanded, start)
+        if expanded >= MAX_NODES:
+            break
+        if depth >= DFS_MAX_DEPTH:
+            continue
+
+        for move, nxt in reversed(successors(current)):
+            next_depth = depth + 1
+            seen_depth = best_depth.get(nxt)
+            if seen_depth is not None and seen_depth <= next_depth:
+                continue
+            best_depth[nxt] = next_depth
+            parent[nxt] = (current, move)
+            stack.append((nxt, next_depth))
+
+    return result_dict(False, [], expanded, start)
+
+
+# ------------------------------ Tarefa 4: A* ------------------------------
+
+def manhattan_distance(state: State) -> int:
+    """h(n): soma das distancias de Manhattan de cada peca ate a meta."""
+    total = 0
+    for idx, tile in enumerate(state):
+        if tile == 0:
+            continue
+        row, col = divmod(idx, BOARD_SIZE)
+        goal_idx = tile - 1
+        goal_row, goal_col = divmod(goal_idx, BOARD_SIZE)
+        total += abs(row - goal_row) + abs(col - goal_col)
+    return total
+
+
+def solve_astar(initial: State) -> Dict[str, object]:
+    start = time.perf_counter()
+    expanded = 0
+
+    # Heap guarda: (f(n), g(n), estado)
+    heap: List[Tuple[int, int, State]] = [(manhattan_distance(initial), 0, initial)]
+    g_cost: Dict[State, int] = {initial: 0}
+    parent: Dict[State, Tuple[Optional[State], Optional[str]]] = {initial: (None, None)}
+
+    while heap:
+        _, g, current = heapq.heappop(heap)
+        if g != g_cost.get(current):
+            continue
+
+        expanded += 1
+
+        if current == GOAL_STATE:
+            return result_dict(True, reconstruct_moves(parent, current), expanded, start)
+        if expanded >= MAX_NODES:
+            break
+
+        for move, nxt in successors(current):
+            new_g = g + 1
+            old_g = g_cost.get(nxt, 10**9)
+            if new_g >= old_g:
+                continue
+            g_cost[nxt] = new_g
+            parent[nxt] = (current, move)
+            heapq.heappush(heap, (new_g + manhattan_distance(nxt), new_g, nxt))
+
+    return result_dict(False, [], expanded, start)
+
+
+# ------------------------------ Tarefa 5 ------------------------------
+
+def run_all_methods(initial: State) -> Dict[str, Dict[str, object]]:
+    return {
+        "BFS": solve_bfs(initial),
+        "DFS": solve_dfs(initial),
+        "A*": solve_astar(initial),
+    }
+
+
+def compare_methods(trials: int, scramble_moves: int) -> Dict[str, Dict[str, float]]:
+    totals = {
+        "BFS": {"solved": 0, "nodes": 0.0, "moves": 0.0, "time": 0.0},
+        "DFS": {"solved": 0, "nodes": 0.0, "moves": 0.0, "time": 0.0},
+        "A*": {"solved": 0, "nodes": 0.0, "moves": 0.0, "time": 0.0},
     }
 
     for _ in range(trials):
-        initial = Puzzle.generate_random_from_goal(moves=moves)
-        experiments = [
-            ("BFS", BFSAgent()),
-            ("DFS", DFSAgent(depth_limit=dfs_limit)),
-            ("A*", AStarAgent()),
-        ]
-        for label, agent in experiments:
-            start = time.time()
-            result = agent.solve(initial, max_nodes=max_nodes)
-            elapsed = time.time() - start
+        initial = generate_initial_state(scramble_moves)
+        results = run_all_methods(initial)
+        for method in ("BFS", "DFS", "A*"):
+            result = results[method]
+            totals[method]["nodes"] += float(result["nodes"])
+            totals[method]["time"] += float(result["time"])
+            if bool(result["solved"]):
+                totals[method]["solved"] += 1
+                totals[method]["moves"] += float(len(result["moves"]))  # type: ignore[arg-type]
 
-            aggregates[label]["nodes"] += agent.nodes_expanded
-            aggregates[label]["time"] += elapsed
-            if result is not None:
-                aggregates[label]["solved"] += 1
-                aggregates[label]["moves"] += result.cost
-
-    summary = {}
-    for label, values in aggregates.items():
-        solved = values["solved"]
-        summary[label] = {
-            "solved": solved,
-            "avg_nodes_expanded": values["nodes"] / trials,
-            "avg_moves_to_solution": (values["moves"] / solved) if solved else None,
-            "avg_time_seconds": values["time"] / trials,
+    summary: Dict[str, Dict[str, float]] = {}
+    for method in ("BFS", "DFS", "A*"):
+        solved = totals[method]["solved"]
+        avg_moves = -1.0
+        if solved > 0:
+            avg_moves = totals[method]["moves"] / solved
+        summary[method] = {
+            "solved": float(solved),
+            "avg_nodes": totals[method]["nodes"] / trials,
+            "avg_moves": avg_moves,
+            "avg_time": totals[method]["time"] / trials,
         }
     return summary
 
 
-def print_benchmark(summary: Dict[str, dict], trials: int, moves: int, max_nodes: int) -> None:
-    print_separator("=")
-    print("COMPARATIVE ANALYSIS")
-    print_separator("=")
-    print(f"Trials: {trials} | Scramble moves: {moves} | Max expanded nodes/run: {max_nodes}")
-    print()
+def print_single_execution(initial: State, results: Dict[str, Dict[str, object]]) -> None:
+    print("=" * 60)
+    print("JOGO DO 15 - EXECUCAO UNICA")
+    print("=" * 60)
+    print("Estado inicial:")
+    print_board(initial)
+    print(f"\nSolucionavel? {is_solvable(initial)}")
+    print(f"Limites: MAX_NODES={MAX_NODES}, DFS_MAX_DEPTH={DFS_MAX_DEPTH}\n")
+
     for method in ("BFS", "DFS", "A*"):
-        stats = summary[method]
-        moves_info = (
-            f"{stats['avg_moves_to_solution']:.2f}"
-            if stats["avg_moves_to_solution"] is not None
-            else "N/A"
-        )
+        result = results[method]
+        solved = bool(result["solved"])
+        moves = result["moves"]  # type: ignore[assignment]
         print(f"{method}:")
-        print(f"  Solved runs         : {stats['solved']}/{trials}")
-        print(f"  Avg nodes expanded  : {stats['avg_nodes_expanded']:.2f}")
-        print(f"  Avg moves to goal   : {moves_info}")
-        print(f"  Avg time            : {stats['avg_time_seconds']:.6f}s")
+        print(f"  Resolvido: {'sim' if solved else 'nao'}")
+        print(f"  Nos expandidos: {result['nodes']}")
+        print(f"  Movimentos: {len(moves) if solved else 'N/A'}")
+        print(f"  Tempo (s): {float(result['time']):.6f}")
+        if solved:
+            print(f"  Caminho: {' -> '.join(moves) if moves else 'ja estava resolvido'}")
         print()
+
+
+def print_comparison(summary: Dict[str, Dict[str, float]], trials: int, scramble_moves: int) -> None:
+    print("=" * 60)
+    print("JOGO DO 15 - COMPARACAO")
+    print("=" * 60)
+    print(
+        f"trials={trials} | scramble_moves={scramble_moves} | "
+        f"MAX_NODES={MAX_NODES} | DFS_MAX_DEPTH={DFS_MAX_DEPTH}\n"
+    )
+
+    for method in ("BFS", "DFS", "A*"):
+        data = summary[method]
+        solved = int(data["solved"])
+        avg_moves = "N/A" if data["avg_moves"] < 0 else f"{data['avg_moves']:.2f}"
+        print(f"{method}:")
+        print(f"  Resolvidos: {solved}/{trials}")
+        print(f"  Media de nos expandidos: {data['avg_nodes']:.2f}")
+        print(f"  Media de movimentos: {avg_moves}")
+        print(f"  Media de tempo (s): {data['avg_time']:.6f}")
+        print()
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="TP1 - Jogo do 15 (arquivo unico)")
+    parser.add_argument("--compare", action="store_true", help="Ativa comparacao dos metodos.")
+    parser.add_argument("--trials", type=int, default=DEFAULT_TRIALS, help="Numero de experimentos no modo compare.")
+    parser.add_argument("--moves", type=int, default=DEFAULT_SCRAMBLE_MOVES, help="Movimentos aleatorios para gerar estado inicial.")
+    return parser.parse_args()
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Fifteen Puzzle Game solver")
-    parser.add_argument(
-        "--moves", type=int, default=20,
-        help="Number of random moves from goal to generate the puzzle (default: 20)"
-    )
-    parser.add_argument(
-        "--max-nodes", type=int, default=200000,
-        help="Maximum number of expanded nodes allowed per run (default: 200000)"
-    )
-    parser.add_argument(
-        "--dfs-limit", type=int, default=50,
-        help="Depth limit used by DFS/IDDFS (default: 50)"
-    )
-    parser.add_argument(
-        "--compare", action="store_true",
-        help="Run comparative analysis with several random initial states"
-    )
-    parser.add_argument(
-        "--trials", type=int, default=10,
-        help="Number of random initial states used in comparative analysis (default: 10)"
-    )
-    args = parser.parse_args()
-
-    print("=" * 48)
-    print("         FIFTEEN PUZZLE GAME SOLVER")
-    print("=" * 48)
-
-    # Generate a solvable puzzle
-    initial = Puzzle.generate_random_from_goal(moves=args.moves)
-
-    print_board(initial, title="Initial Board:")
-    print(f"Solvable: {Puzzle.is_solvable(initial.state)}")
-
-    # ------------------------------------------------------------------ A*
-    run_agent("A* (Manhattan Distance)", AStarAgent(), initial, max_nodes=args.max_nodes)
-
-    # ------------------------------------------------------------------ BFS
-    # BFS can be very slow for puzzles with many moves; warn the user.
-    print()
-    print("NOTE: BFS and DFS may be slow for puzzles far from the goal.")
-    run_agent("BFS (Breadth-First Search)", BFSAgent(), initial, max_nodes=args.max_nodes)
-
-    # ------------------------------------------------------------------ DFS
-    run_agent(
-        f"DFS (Depth-First Search, IDDFS, limit={args.dfs_limit})",
-        DFSAgent(depth_limit=args.dfs_limit),
-        initial,
-        max_nodes=args.max_nodes
-    )
-
+    args = parse_args()
     if args.compare:
-        print()
-        summary = benchmark_agents(
-            trials=args.trials,
-            moves=args.moves,
-            max_nodes=args.max_nodes,
-            dfs_limit=args.dfs_limit
-        )
-        print_benchmark(summary, args.trials, args.moves, args.max_nodes)
+        summary = compare_methods(trials=args.trials, scramble_moves=args.moves)
+        print_comparison(summary, trials=args.trials, scramble_moves=args.moves)
+        return
 
-    print_separator("=")
+    initial = generate_initial_state(scramble_moves=args.moves)
+    results = run_all_methods(initial)
+    print_single_execution(initial, results)
 
 
 if __name__ == "__main__":

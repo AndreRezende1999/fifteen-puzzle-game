@@ -1,25 +1,33 @@
-# fifteen-puzzle-game
+# TP1 - Jogo do 15
 
-Implementação do Jogo do 15 com:
-- Verificação de solucionabilidade do estado inicial;
-- Geração aleatória de estados solucionáveis;
-- Agentes de busca: BFS, DFS (IDDFS) e A* (distância de Manhattan);
-- Evitação de ciclos;
-- Comparação dos métodos por médias de nós expandidos, movimentos e tempo.
+Projeto em **arquivo unico**: `main.py`.
 
-## Execução
+Implementa exatamente as tarefas do trabalho:
+1. verificacao de solucionabilidade;
+2. geracao aleatoria de estado inicial solucionavel;
+3. BFS e DFS com evitacao de ciclos;
+4. A* com custo `g(n)` e heuristica de Manhattan `h(n)`;
+5. comparacao por medias de nos expandidos, movimentos e tempo.
 
-```bash
-python main.py --moves 20
-```
-
-## Comparação automática (Tarefa 5)
+## Execucao
 
 ```bash
-python main.py --compare --trials 10 --moves 20 --max-nodes 200000 --dfs-limit 50
+python main.py
 ```
 
-Parâmetros principais:
-- `--max-nodes`: limite de nós expandidos por execução (interrompe busca ao atingir o limite);
-- `--compare`: executa comparação em múltiplos estados iniciais aleatórios;
-- `--trials`: quantidade de estados aleatórios para cálculo das médias.
+Opcional:
+- `--moves 20` define quantos movimentos aleatorios geram o estado inicial.
+
+## Comparacao
+
+```bash
+python main.py --compare
+```
+
+Opcional:
+- `--trials 10` quantidade de estados iniciais na comparacao.
+- `--moves 20` dificuldade dos estados.
+
+## Observacao
+
+O limite fixo e alto de busca esta no proprio codigo (`MAX_NODES`), conforme recomendacao do enunciado.
